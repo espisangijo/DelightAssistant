@@ -1,4 +1,4 @@
-package com.support.delight_assistant
+package com.support.delight_assistant.core.presentation
 
 import android.os.Bundle
 import androidx.fragment.app.Fragment
