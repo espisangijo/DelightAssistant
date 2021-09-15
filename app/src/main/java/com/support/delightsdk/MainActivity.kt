@@ -17,6 +17,7 @@ class MainActivity : AppCompatActivity(), Assistant.OnFragmentInteractionListene
 
         assistant = Assistant.Builder()
             .setWebhookUrl("webhook/android/21a948ac-e835-48c6-b37c-b45257e3b6d2/")
+            .setInitialRequest("Hello")
             .build()
 
         showDialog()

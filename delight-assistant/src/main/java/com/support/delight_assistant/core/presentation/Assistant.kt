@@ -13,8 +13,6 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 
-import androidx.fragment.app.Fragment
-
 import com.google.android.material.bottomsheet.BottomSheetDialogFragment
 import com.support.delight_assistant.databinding.FragmentAssistantBinding
 import android.view.LayoutInflater
@@ -41,14 +39,15 @@ import com.support.delight_assistant.utils.Constants.Companion.SEND_ID
 import com.support.delight_assistant.utils.Time
 import java.util.Locale
 
-class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogFragment(), TextToSpeech.OnInitListener {
+class Assistant private constructor(val webhookUrl: String?, val initialRequest: String?): BottomSheetDialogFragment(), TextToSpeech.OnInitListener {
     data class Builder(
-        var webhookUrl: String? = null
+        var webhookUrl: String? = null,
+        var initialRequest: String? = null
     ) {
         fun setWebhookUrl(webhookUrl: String) = apply {this.webhookUrl = webhookUrl}
-        fun build() = Assistant(webhookUrl)
+        fun setInitialRequest(initialRequest: String) = apply {this.initialRequest = initialRequest}
+        fun build() = Assistant(webhookUrl, initialRequest)
     }
-    private var isListening = false
     private var dismiss = false
     private var tts: TextToSpeech? = null
     override fun onInit(status: Int) {
@@ -64,14 +63,16 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
                 }
 
                 override fun onDone(utteranceId: String?) {
-
-                    Log.d(TAG, "on TTS done")
-                    if (dismiss == true){
+                    Log.d(TAG, "TTS Done")
+                    if (dismiss){
+                        Log.d(TAG, "dismissing")
                         dialog?.let { onDismiss(it) }
                     } else {
+                        Log.d(TAG, "listening")
                         activity?.runOnUiThread {
                             startListening()
-                        }}
+                        }
+                    }
                 }
 
                 override fun onError(utteranceId: String?) {
@@ -102,16 +103,13 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
 
     private lateinit var adapter: MessagingAdapter
     private lateinit var recyclerView: RecyclerView
+
+    private lateinit var bottomSheetBehavior: BottomSheetBehavior<ConstraintLayout>
+
     override fun getTheme(): Int = R.style.BottomSheetDialogTheme
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         Log.d(TAG, "onCreateDialog")
         return BottomSheetDialog(requireContext(), theme)
-    }
-    override fun onDismiss(dialog: DialogInterface) {
-        super.onDismiss(dialog)
-        // turn off
-        speechRecognizer.cancel()
-        speechRecognizer.destroy()
     }
 
 
@@ -163,13 +161,13 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
             override fun onRmsChanged(v: Float) {
                 when {
                     v > 1 -> {
-                        binding?.btnAudio.setImageResource(R.drawable.logo)
+                        binding?.btnAudio.setImageResource(R.drawable.delight_audio_button_blue)
                     }
                     v > 3 -> {
-                        binding?.btnAudio.setImageResource(R.drawable.logo)
+                        binding?.btnAudio.setImageResource(R.drawable.delight_audio_button_blue)
                     }
                     else -> {
-                        binding?.btnAudio.setImageResource(R.drawable.logo)
+                        binding?.btnAudio.setImageResource(R.drawable.delight_audio_button_blue)
                     }
                 }
             }
@@ -210,7 +208,7 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
                     }
                     SpeechRecognizer.ERROR_NO_MATCH -> {
                         errorCode = "No recognition result matched"
-                        binding?.requestText.text = "Press the button and try saying \"Hello!\""
+                        changeText("Press the button and try saying \"Hello!\"", 0.3.toFloat())
                     }
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
                         errorCode = "RecognitionService busy"
@@ -244,7 +242,6 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
                 }
             }
             override fun onPartialResults(partialResults: Bundle) {
-                binding?.requestText.alpha = 1.0.toFloat()
                 Log.d(TAG, "onPartialResults")
                 val result = partialResults.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 changeText(result.toString().slice(1 until result.toString().length -1 ))
@@ -270,54 +267,38 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
         recyclerView.layoutManager = LinearLayoutManager(activity)
         return view
     }
-    private lateinit var bottomSheetBehavior: BottomSheetBehavior<ConstraintLayout>
-    fun pauseProcesses() {
-        if(tts != null) {
-            tts!!.stop()
-            tts!!.shutdown()
+    private fun enableButton() {
+        binding?.btnAudio.setImageResource(R.drawable.delight_audio_button_blue)
+        binding?.btnAudio.setOnClickListener {
+            tts?.stop();
+            startListening()
         }
-
-        if (speechRecognizer != null) {
-            speechRecognizer!!.cancel()
-            speechRecognizer!!.destroy()
-        }
+        changeText("Press the button and try saying something", 0.3.toFloat())
     }
-    fun resumeProcesses() {
-        initTTS()
-        initSpeechRecognition()
+    private fun disableButton() {
+        binding?.btnAudio.setOnClickListener(null)
+        binding?.btnAudio.setImageResource(R.drawable.delight_audio_button_bnw)
     }
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
+
         connectionLiveData.observe(this, {isNetworkAvailable ->
             run {
                 if (isNetworkAvailable) {
                     resumeProcesses()
-                    binding?.btnAudio.setOnClickListener {
-                        tts?.stop();
-                        startListening()
-                    }
-                    binding?.btnAudio.setImageResource(R.drawable.logo)
-                    if (isListening === false) {
-                        startListening()
-                    }
-
+                    enableButton()
                 } else {
                     pauseProcesses()
-                    isListening = false
-                    binding?.btnAudio.setOnClickListener(null)
-                    binding?.btnAudio.setImageResource(R.drawable.logo_bw)
-                    binding?.requestText.text = "No internet connection"
+                    disableButton()
+                    changeText("No internet connection", 0.3.toFloat())
                 }
             }
         })
+
         bottomSheetBehavior = BottomSheetBehavior.from(binding?.bottomSheetFragment)
         bottomSheetBehavior.state = BottomSheetBehavior.STATE_EXPANDED;
-//        binding?.bottomSheetFragment.removeView(binding?.rvMessages)
-//        binding?.bottomSheetFragment.addView(binding?.constraintLayout)
         bottomSheetBehavior.isDraggable= false
-//        bottomSheetBehavior.peekHeight = 700
-        bottomSheetBehavior.addBottomSheetCallback(object :
-            BottomSheetBehavior.BottomSheetCallback() {
+        bottomSheetBehavior.addBottomSheetCallback(object : BottomSheetBehavior.BottomSheetCallback() {
 
             override fun onSlide(bottomSheet: View, slideOffset: Float) {
                 // handle onSlide
@@ -336,16 +317,10 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
             }
         })
 
-        startListening()
-
         binding?.btnAudio.setOnClickListener {
             tts?.stop();
             startListening()
         }
-        viewModel._messages.observe(this, Observer {
-                data ->
-            Log.d(TAG, data.toString())
-        })
 
         viewModel._lastResponse.observe(this, Observer { response ->
             if (response.isSuccessful) {
@@ -359,29 +334,61 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
             } else {
                 Log.e(TAG, "error in getting response")
             }
+        })
+
+        if(initialRequest !== null) {
+            Log.d(TAG, "initial request")
+            changeText(initialRequest)
+            adapter.insertMessage(Message(binding?.requestText.text.toString(), SEND_ID, Time.timeStamp() ))
+            recyclerView.scrollToPosition(adapter.itemCount - 1)
+            sendMessage()
+        } else {
+            Log.d(TAG, "no initial request")
+            changeText("Press the button and try saying something", 0.3.toFloat())
         }
-        )
+    }
+    override fun onDismiss(dialog: DialogInterface) {
+        super.onDismiss(dialog)
+        // turn off
+        speechRecognizer.cancel()
+        speechRecognizer.destroy()
+    }
+    override fun onDestroy() {
+        if(tts != null) {
+            tts!!.stop()
+            tts!!.shutdown()
+        }
+
+        if (speechRecognizer != null) {
+            speechRecognizer!!.cancel()
+            speechRecognizer!!.destroy()
+        }
+        super.onDestroy()
     }
 
+    interface OnFragmentInteractionListener {
+        fun onFragmentInteraction(uri: Uri)
+    }
+
+
+
     private fun startListening() {
-        isListening = true
         if(checkPermission()) {
             Log.d(TAG, checkPermission().toString())
             try {
                 GlobalScope.launch {
-                    binding?.requestText.alpha = 0.3.toFloat()
-                    binding?.requestText.text = "Listening..."
+                    Log.d(TAG, "start listening")
+                    changeText("Listening...", 0.3.toFloat())
                     activity?.runOnUiThread {
-
                         speechRecognizer.startListening(speechRecognizerIntent)
                     }
                 }
             } catch (e: Exception) {
 
+                Log.d(TAG, e.toString())
                 GlobalScope.launch {
                     activity?.runOnUiThread {
                         speechRecognizer.stopListening()
-                        isListening = false
                     }
                 }
             }
@@ -390,21 +397,17 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
     }
 
 
-    interface OnFragmentInteractionListener {
-        fun onFragmentInteraction(uri: Uri)
-    }
-
-    fun changeText(newText: String) {
+    private fun changeText(newText: String, alpha: Float = 1.0.toFloat()) {
         binding?.requestText.text = newText
+        binding?.requestText.alpha = alpha
     }
 
-    fun sendMessage() {
+    private fun sendMessage() {
         if (webhookUrl === null) {
             Log.e(TAG, "invalid webhook")
         } else {
             viewModel.getDelightResponse(Message(binding?.requestText.text.toString(), SEND_ID, Time.timeStamp()), webhookUrl)
         }
-
     }
 
     private fun checkPermission() : Boolean{
@@ -423,7 +426,7 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
         }
     }
 
-    override fun onDestroy() {
+    private fun pauseProcesses() {
         if(tts != null) {
             tts!!.stop()
             tts!!.shutdown()
@@ -433,7 +436,9 @@ class Assistant private constructor(val webhookUrl: String?): BottomSheetDialogF
             speechRecognizer!!.cancel()
             speechRecognizer!!.destroy()
         }
-        super.onDestroy()
     }
-
+    private fun resumeProcesses() {
+        initTTS()
+        initSpeechRecognition()
+    }
 }

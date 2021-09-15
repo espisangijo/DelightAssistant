@@ -57,7 +57,7 @@
             android:layout_alignParentBottom="true"
             android:layout_centerHorizontal="true"
             android:backgroundTint="#ffffff"
-            android:src="@drawable/logo"
+            android:src="@drawable/delight_audio_button_blue"
             android:textColor="@android:color/white"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
